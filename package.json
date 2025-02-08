@@ -1,7 +1,7 @@
 {
   "name": "ai-code-reviewer",
   "displayName": "AI Code Reviewer",
-  "description": "",
+  "description": "A VS Code extension that uses OpenAI to review your code.",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.97.0"
@@ -9,13 +9,54 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onView:codeReviewView"
+  ],
   "main": "./extension.js",
   "contributes": {
-    "commands": [{
-      "command": "ai-code-reviewer.helloWorld",
-      "title": "Hello World"
-    }]
+    "commands": [
+      {
+        "command": "ai-code-reviewer.setAssistantId",
+        "title": "Set Assistant ID"
+      },
+      {
+        "command": "ai-code-reviewer.testAssistantId",
+        "title": "Test Assistant ID"
+      },
+      {
+        "command": "ai-code-reviewer.reviewSelectedCode",
+        "title": "Review Selected Code"
+      },
+      {
+        "command": "ai-code-reviewer.refreshAssistantId",
+        "title": "Refresh Assistant ID"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ai-code-reviewer.reviewSelectedCode",
+          "group": "navigation"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiCodeReview",
+          "title": "AI Code Reviewer",
+          "icon": "./resources/ai_logo.png"
+        }
+      ]
+    },
+    "views": {
+      "aiCodeReview": [
+        {
+          "id": "codeReviewView",
+          "name": "AI Code Reviewer"
+        }
+      ]
+    }
   },
   "scripts": {
     "lint": "eslint .",
@@ -23,11 +64,13 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.97.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
-    "eslint": "^9.19.0",
+    "@types/vscode": "^1.97.0",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1"
+    "@vscode/test-electron": "^2.4.1",
+    "env": "^0.0.2",
+    "eslint": "^9.19.0",
+    "openai": "^4.83.0"
   }
 }
