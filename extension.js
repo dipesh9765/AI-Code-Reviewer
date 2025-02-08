@@ -3,6 +3,9 @@ const { OpenAI } = require("openai");
 
 let openAiClient;
 let assistantId = "asst_yZxRGLalWzVvVfnVisulCvUc"; // Default Assistant ID
+let lastReviewResponse = "Awaiting AI review...";
+let treeDataProvider = null;
+let chatProvider = null;
 
 class CodeReviewTreeDataProvider {
     constructor() {
@@ -16,15 +19,34 @@ class CodeReviewTreeDataProvider {
 
     getChildren() {
         return [
-            new vscode.TreeItem(
-                "AI Code Reviewer",
-                vscode.TreeItemCollapsibleState.None
-            ),
-            new vscode.TreeItem(
-                `Assistant ID: ${assistantId}`,
-                vscode.TreeItemCollapsibleState.None
-            )
+            new vscode.TreeItem("AI Code Reviewer", vscode.TreeItemCollapsibleState.None),
+            this.createAssistantIdInputBox(),
+            this.createRefreshButton(),
+            this.createReviewOutput()
         ];
+    }
+
+    createAssistantIdInputBox() {
+        const assistantItem = new vscode.TreeItem(`Assistant ID: ${assistantId}`, vscode.TreeItemCollapsibleState.None);
+        assistantItem.command = {
+            command: "ai-code-reviewer.editAssistantId",
+            title: "Edit Assistant ID"
+        };
+        return assistantItem;
+    }
+
+    createRefreshButton() {
+        const refreshItem = new vscode.TreeItem("🔄 Refresh Assistant ID", vscode.TreeItemCollapsibleState.None);
+        refreshItem.command = {
+            command: "ai-code-reviewer.testAssistantId",
+            title: "Refresh Assistant ID"
+        };
+        return refreshItem;
+    }
+
+    createReviewOutput() {
+        const reviewOutputItem = new vscode.TreeItem(`Review Output:\n${lastReviewResponse}`, vscode.TreeItemCollapsibleState.None);
+        return reviewOutputItem;
     }
 
     refresh() {
@@ -32,47 +54,69 @@ class CodeReviewTreeDataProvider {
     }
 }
 
+class ChatMessageItem extends vscode.TreeItem {
+    constructor(label) {
+        super(label, vscode.TreeItemCollapsibleState.None);
+        this.tooltip = label; // Show full message on hover
+    }
+}
+
+class ChatDataProvider {
+    constructor() {
+        this.messages = [];
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+    }
+
+    getTreeItem(element) {
+        return element;
+    }
+
+    getChildren() {
+        return this.messages;
+    }
+
+    appendMessage(message, isUser) {
+        const prefix = isUser ? "👤 User: " : "🤖 AI: ";
+        this.messages.push(new ChatMessageItem(`${prefix}${message}`));
+
+        // Refresh the UI
+        this._onDidChangeTreeData.fire();
+    }
+}
+
+
 async function verifyAssistantId(assistantId) {
     try {
         const assistant = await openAiClient.beta.assistants.retrieve(assistantId);
         return !!assistant; // Return true if the assistant exists
     } catch (error) {
+        vscode.window.showErrorMessage(`Error: ${error.message}`);
         return false; // Return false if the assistant ID is invalid
     }
 }
 
 async function sendToOpenAI(content) {
     try {
-        // Step 1: Create a Thread
         const thread = await openAiClient.beta.threads.create();
-
-        // Step 2: Add the Code as a Message to the Thread
         await openAiClient.beta.threads.messages.create(thread.id, {
             role: "user",
             content: `Please review this code:\n\n${content}`,
         });
 
-        // Step 3: Run the Assistant
         const run = await openAiClient.beta.threads.runs.create(thread.id, {
-            assistant_id: assistantId, // Replace with your Assistant ID
+            assistant_id: assistantId,
         });
 
-        // Step 4: Poll for the Assistant's Response
         let response;
         while (true) {
-            const status = await openAiClient.beta.threads.runs.retrieve(
-                thread.id,
-                run.id
-            );
+            const status = await openAiClient.beta.threads.runs.retrieve(thread.id, run.id);
 
             if (status.status === "completed") {
-                // Fetch the Assistant's Messages
-                const messages = await openAiClient.beta.threads.messages.list(
-                    thread.id
-                );
+                const messages = await openAiClient.beta.threads.messages.list(thread.id);
                 response = messages.data
-                    .filter((msg) => msg.role === "assistant")
-                    .map((msg) => msg.content[0].text.value)
+                    .filter(msg => msg.role === "assistant")
+                    .map(msg => msg.content[0].text.value)
                     .join("\n");
                 break;
             }
@@ -81,90 +125,49 @@ async function sendToOpenAI(content) {
                 throw new Error(status.last_error.message);
             }
 
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second before polling again
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
-        // Clean up: Delete the thread
         await openAiClient.beta.threads.del(thread.id);
-
+        lastReviewResponse = response; // Store response for UI update
+        treeDataProvider.refresh();
         return response;
     } catch (error) {
         console.error("Error sending code for review:", error);
+        lastReviewResponse = `Error: ${error.message}`;
+        treeDataProvider.refresh();
         return `Error: ${error.message}`;
     }
 }
 
 function activate(context) {
-    // Initialize OpenAI client
     openAiClient = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-        organization: process.env.ORGANIZATION_ID,
-        project: process.env.PROJECT_ID,
+        apiKey: "", // Replace with actual API key
+        organization: "",
+        project: "",
     });
 
-    // Register Tree Data Provider for Sidebar
-    const treeDataProvider = new CodeReviewTreeDataProvider();
+    treeDataProvider = new CodeReviewTreeDataProvider();
     vscode.window.registerTreeDataProvider("codeReviewView", treeDataProvider);
 
-    // Add Input Box for Assistant ID
-    vscode.commands.registerCommand(
-        "ai-code-reviewer.setAssistantId",
-        async () => {
-            const newAssistantId = await vscode.window.showInputBox({
-                prompt: "Enter your OpenAI Assistant ID",
-                value: assistantId,
-            });
+    vscode.commands.registerCommand("ai-code-reviewer.editAssistantId", async () => {
+        const newAssistantId = await vscode.window.showInputBox({
+            prompt: "Enter your OpenAI Assistant ID",
+            value: assistantId,
+        });
 
-            if (newAssistantId) {
-                const isValid = await verifyAssistantId(newAssistantId);
-                if (isValid) {
-                    assistantId = newAssistantId;
-                    treeDataProvider.refresh();
-                    vscode.window.showInformationMessage(
-                        "Assistant ID updated successfully!"
-                    );
-                } else {
-                    vscode.window.showErrorMessage(
-                        "Invalid Assistant ID. Please try again."
-                    );
-                }
+        if (newAssistantId) {
+            const isValid = await verifyAssistantId(newAssistantId);
+            if (isValid) {
+                assistantId = newAssistantId;
+                treeDataProvider.refresh();
+                vscode.window.showInformationMessage("Assistant ID updated successfully!");
+            } else {
+                vscode.window.showErrorMessage("Invalid Assistant ID. Please try again.");
             }
-        }
-    );
-
-    // Add Context Menu Option for Code Review
-    vscode.commands.registerCommand("ai-code-reviewer.reviewSelectedCode", async () => {
-        const editor = vscode.window.activeTextEditor;
-
-        if (!editor) {
-            vscode.window.showErrorMessage("No active editor found.");
-            return;
-        }
-
-        const selection = editor.selection;
-        const fileContent = editor.document.getText(selection.isEmpty ? undefined : selection);
-        if (!fileContent)
-            return sendFileForReview();
-
-        const fileName = editor.document.fileName.split("/").pop();
-
-        vscode.window.showInformationMessage(`${fileName} sent for review`);
-
-        const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
-        statusBarItem.text = "$(sync~spin) Waiting for response...";
-        statusBarItem.show();
-
-        try {
-            const response = await sendToOpenAI(fileContent);
-            vscode.window.showInformationMessage(`Review: ${response}`);
-        } catch (error) {
-            vscode.window.showErrorMessage(`Error: ${error.message}`);
-        } finally {
-            statusBarItem.hide();
         }
     });
 
-    // Add Test Assistant ID Button
     vscode.commands.registerCommand("ai-code-reviewer.testAssistantId", async () => {
         const isValid = await verifyAssistantId(assistantId);
         if (isValid) {
@@ -174,16 +177,39 @@ function activate(context) {
         }
     });
 
-    // Register Command for Sending Code for Review
-    vscode.commands.registerCommand(
-        "ai-code-reviewer.sendForReview",
-        sendFileForReview
-    );
+    vscode.commands.registerCommand("ai-code-reviewer.reviewSelectedCode", async () => {
+
+        chatProvider = new ChatDataProvider();
+        vscode.window.registerTreeDataProvider("codeReviewView", chatProvider);
+
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showErrorMessage("No active editor found.");
+            return;
+        }
+
+        const selection = editor.selection;
+        if (selection.isEmpty) return sendFileForReview();
+        const fileContent = editor.document.getText(selection.isEmpty ? undefined : selection);
+
+        const fileName = editor.document.fileName.split("/").pop();
+        vscode.window.showInformationMessage(`${fileName} sent for review`);
+
+        chatProvider.appendMessage(selection.isEmpty ? fileName : fileContent, true); // Append User Message
+
+        try {
+            await sendToOpenAI(fileContent);
+            chatProvider.appendMessage(lastReviewResponse, false); // Append AI Response
+        } catch (error) {
+            vscode.window.showErrorMessage(`Error: ${error.message}`);
+        }
+    });
+
+    vscode.commands.registerCommand("ai-code-reviewer.sendForReview", sendFileForReview);
 }
 
 async function sendFileForReview() {
     const editor = vscode.window.activeTextEditor;
-
     if (!editor) {
         vscode.window.showErrorMessage("No active editor found.");
         return;
@@ -192,23 +218,14 @@ async function sendFileForReview() {
     const fileContent = editor.document.getText();
     const fileName = editor.document.fileName.split("/").pop();
 
-    // Display "File_name sent for review"
     vscode.window.showInformationMessage(`${fileName} sent for review`);
-
-    // Show loading indicator
-    const statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Left
-    );
-    statusBarItem.text = "$(sync~spin) Waiting for response...";
-    statusBarItem.show();
+    chatProvider.appendMessage(fileName, true); // Append User Message
 
     try {
-        const response = await sendToOpenAI(fileContent);
-        vscode.window.showInformationMessage(`Review: ${response}`);
+        await sendToOpenAI(fileContent);
+        chatProvider.appendMessage(lastReviewResponse, false); // Append AI Response
     } catch (error) {
         vscode.window.showErrorMessage(`Error: ${error.message}`);
-    } finally {
-        statusBarItem.hide();
     }
 }
 
