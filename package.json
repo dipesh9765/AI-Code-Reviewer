@@ -12,51 +12,26 @@
   "activationEvents": [
     "onView:codeReviewView"
   ],
+  "extensionDependencies": [
+    "github.copilot-chat"
+  ],
   "main": "./extension.js",
   "contributes": {
-    "commands": [
+    "chatParticipants": [
       {
-        "command": "ai-code-reviewer.setAssistantId",
-        "title": "Set Assistant ID"
-      },
-      {
-        "command": "ai-code-reviewer.testAssistantId",
-        "title": "Test Assistant ID"
-      },
-      {
-        "command": "ai-code-reviewer.reviewSelectedCode",
-        "title": "Review Selected Code"
-      },
-      {
-        "command": "ai-code-reviewer.refreshAssistantId",
-        "title": "Refresh Assistant ID"
+        "id": "ai-code-reviewer.aiCodeReviewer",
+        "fullName": "AI Code Reviewer",
+        "name": "aiCodeReviewer",
+        "description": "Generate code reviews with AI",
+        "isSticky": true
       }
     ],
-    "menus": {
-      "editor/context": [
-        {
-          "command": "ai-code-reviewer.reviewSelectedCode",
-          "group": "navigation"
-        }
-      ]
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "aiCodeReview",
-          "title": "AI Code Reviewer",
-          "icon": "./resources/ai_logo.png"
-        }
-      ]
-    },
-    "views": {
-      "aiCodeReview": [
-        {
-          "id": "codeReviewView",
-          "name": "AI Code Reviewer"
-        }
-      ]
-    }
+    "commands": [
+      {
+        "command": "ai-code-reviewer.editAssistantId",
+        "title": "Edit Code Reviewer Assistant ID"
+      }
+    ]
   },
   "scripts": {
     "lint": "eslint .",
@@ -69,7 +44,6 @@
     "@types/vscode": "^1.97.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
-    "env": "^0.0.2",
     "eslint": "^9.19.0",
     "openai": "^4.83.0"
   }
