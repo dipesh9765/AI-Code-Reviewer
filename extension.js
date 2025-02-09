@@ -2,7 +2,12 @@ const vscode = require("vscode");
 const { OpenAI } = require("openai");
 
 let aiCodeReviewClient;
-let assistantId = "asst_yZxRGLalWzVvVfnVisulCvUc"; // Default Assistant ID  
+
+const FILE_CONST = {
+    OPEN_AI_API_KEY: '',
+    OPEN_AI_ORG: '',
+    OPEN_AI_ASSISTANT_ID: ''
+}
 
 /**
  * @param {string} userQuery
@@ -18,7 +23,7 @@ async function _sendToOpenAI(userQuery, content) {
         });
 
         const run = await aiCodeReviewClient.beta.threads.runs.create(thread.id, {
-            assistant_id: assistantId,
+            assistant_id: FILE_CONST.OPEN_AI_ASSISTANT_ID,
         });
 
         let response;
@@ -52,9 +57,8 @@ async function _sendToOpenAI(userQuery, content) {
 
 function activate() {
     aiCodeReviewClient = new OpenAI({
-        apiKey: "", // Replace with actual API key
-        organization: '',
-        project: ''
+        apiKey: FILE_CONST.OPEN_AI_API_KEY,
+        organization: FILE_CONST.OPEN_AI_ORG,
     });
 
     if (!aiCodeReviewClient) {
@@ -81,7 +85,8 @@ function activate() {
             ) : selection;
 
             const fileName = editor.document.fileName.split("/").pop();
-            vscode.window.showInformationMessage(`${fileName} sent for review`);
+            selection.isEmpty ? null :
+                vscode.window.showInformationMessage(`${fileName} sent for review`);
 
             try {
                 var LAnswerFromAI = await _sendToOpenAI(userQuery, fileContent);
@@ -96,13 +101,13 @@ function activate() {
     vscode.commands.registerCommand("ai-code-reviewer.editAssistantId", async () => {
         const newAssistantId = await vscode.window.showInputBox({
             prompt: "Enter your OpenAI Assistant ID",
-            value: assistantId,
+            value: FILE_CONST.OPEN_AI_ASSISTANT_ID,
         });
 
         if (newAssistantId) {
             const isValid = await verifyAssistantId(newAssistantId);
             if (isValid) {
-                assistantId = newAssistantId;
+                FILE_CONST.OPEN_AI_ASSISTANT_ID = newAssistantId;
                 vscode.window.showInformationMessage("Assistant ID updated successfully!");
             }
         } else {
@@ -110,8 +115,27 @@ function activate() {
         }
     });
 
-}
+    vscode.commands.registerCommand("ai-code-reviewer.editAPIKey", async () => {
+        const newApiKey = await vscode.window.showInputBox({
+            prompt: "Enter your OpenAI API Key",
+            value: "",
+        });
 
+        if (newApiKey && await verifyApiKey(newApiKey)) {
+            FILE_CONST.OPEN_AI_API_KEY = newApiKey;
+
+            aiCodeReviewClient = new OpenAI({
+                apiKey: newApiKey,
+                organization: FILE_CONST.OPEN_AI_ORG,
+            });
+
+            vscode.window.showInformationMessage("API Key updated successfully!");
+        }
+
+
+    });
+
+}
 
 async function verifyAssistantId(assistantId) {
     try {
@@ -120,6 +144,26 @@ async function verifyAssistantId(assistantId) {
     } catch (error) {
         vscode.window.showErrorMessage(`Error: ${error.message}`);
         return false; // Return false if the assistant ID is invalid
+    }
+}
+
+
+async function verifyApiKey(apiKey) {
+    const openai = new OpenAI({
+        apiKey: apiKey,
+    });
+
+    try {
+        // List models to verify the API key
+        const models = await openai.models.list();
+        if (models.data.length === 0) {
+            throw new Error();
+        }
+
+        return true;
+    } catch (error) {
+        vscode.window.showWarningMessage("API Key is invalid or an error occurred: " + error.message);
+        return false;
     }
 }
 

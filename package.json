@@ -29,7 +29,11 @@
     "commands": [
       {
         "command": "ai-code-reviewer.editAssistantId",
-        "title": "Edit Code Reviewer Assistant ID"
+        "title": "AI Code Reviewer: Change Assistant ID"
+      },
+      {
+        "command": "ai-code-reviewer.editAPIKey",
+        "title": "AI Code Reviewer: Change API Key"
       }
     ]
   },
