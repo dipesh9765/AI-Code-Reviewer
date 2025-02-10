@@ -12,8 +12,9 @@ const FILE_CONST = {
 /**
  * @param {string} userQuery
  * @param {string | vscode.Selection} content
+ * @param {{ (partialResponse: any): void; (arg0: any): void; }} onStreamResponse
  */
-async function _sendToOpenAI(userQuery, content) {
+async function _sendToOpenAI(userQuery, content, onStreamResponse) {
     try {
         const thread = await aiCodeReviewClient.beta.threads.create();
 
@@ -24,38 +25,38 @@ async function _sendToOpenAI(userQuery, content) {
 
         const run = await aiCodeReviewClient.beta.threads.runs.create(thread.id, {
             assistant_id: FILE_CONST.OPEN_AI_ASSISTANT_ID,
+            stream: true, // Enable streaming
         });
 
-        let response;
-        while (true) {
-            const status = await aiCodeReviewClient.beta.threads.runs.retrieve(thread.id, run.id);
+        // Process the stream
+        for await (const event of run) {
+            if (event.event === "thread.message.delta") {
+                const content = event.data.delta.content?.[0]?.text?.value || "";
 
-            if (status.status === "completed") {
-                const messages = await aiCodeReviewClient.beta.threads.messages.list(thread.id);
-                response = messages.data
-                    .filter(msg => msg.role === "assistant")
-                    .map(msg => msg.content[0].text.value)
-                    .join("\n");
-                break;
+                // Send the partial response to the callback
+                if (onStreamResponse) {
+                    onStreamResponse(content);
+                }
             }
 
-            if (status.status === "failed") {
-                throw new Error(status.last_error.message);
+            if (event.event === "thread.run.completed") {
+                break; // Exit the loop when the run is completed
             }
 
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (event.event === "thread.run.failed") {
+                throw new Error(event.data.last_error?.message || "Run failed");
+            }
         }
 
         await aiCodeReviewClient.beta.threads.del(thread.id);
 
-        return response;
     } catch (error) {
         console.error("Error sending code for review:", error);
         return `Error: ${error.message}`;
     }
 }
 
-function activate() {
+function activate(context) {
     aiCodeReviewClient = new OpenAI({
         apiKey: FILE_CONST.OPEN_AI_API_KEY,
         organization: FILE_CONST.OPEN_AI_ORG,
@@ -66,7 +67,7 @@ function activate() {
         return;
     }
 
-    vscode.chat.createChatParticipant(
+    const chatParticipant = vscode.chat.createChatParticipant(
         "ai-code-reviewer.aiCodeReviewer",
         async (request, context, response) => {
             const userQuery = request.prompt;
@@ -89,16 +90,22 @@ function activate() {
                 vscode.window.showInformationMessage(`${fileName} sent for review`);
 
             try {
-                var LAnswerFromAI = await _sendToOpenAI(userQuery, fileContent);
+                // var LAnswerFromAI = await _sendToOpenAI(userQuery, fileContent);
+                response.markdown(`**AI Review:**\n\n`);
+                // Call _sendToOpenAI with a callback for streaming
+                await _sendToOpenAI(userQuery, fileContent, (partialResponse) => {
+                    response.markdown(partialResponse);
+                });
+
             } catch (error) {
                 vscode.window.showErrorMessage(`Error: ${error.message}`);
             }
 
-            response.markdown(`**AI Review:**\n\n${LAnswerFromAI}`);
+            // response.markdown(`**AI Review:**\n\n${LAnswerFromAI}`);
         }
     );
 
-    vscode.commands.registerCommand("ai-code-reviewer.editAssistantId", async () => {
+    const EditAssitant = vscode.commands.registerCommand("ai-code-reviewer.editAssistantId", async () => {
         const newAssistantId = await vscode.window.showInputBox({
             prompt: "Enter your OpenAI Assistant ID",
             value: FILE_CONST.OPEN_AI_ASSISTANT_ID,
@@ -115,7 +122,7 @@ function activate() {
         }
     });
 
-    vscode.commands.registerCommand("ai-code-reviewer.editAPIKey", async () => {
+    const EditAPIKey = vscode.commands.registerCommand("ai-code-reviewer.editAPIKey", async () => {
         const newApiKey = await vscode.window.showInputBox({
             prompt: "Enter your OpenAI API Key",
             value: "",
@@ -131,10 +138,11 @@ function activate() {
 
             vscode.window.showInformationMessage("API Key updated successfully!");
         }
-
-
     });
 
+    context.subscriptions.push(chatParticipant);
+    context.subscriptions.push(EditAssitant);
+    context.subscriptions.push(EditAPIKey);
 }
 
 async function verifyAssistantId(assistantId) {

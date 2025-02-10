@@ -10,7 +10,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:codeReviewView"
+    "*"
   ],
   "extensionDependencies": [
     "github.copilot-chat"
@@ -48,7 +48,7 @@
     "@types/vscode": "^1.97.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
-    "eslint": "^9.19.0",
-    "openai": "^4.83.0"
+    "@vscode/openai": "^4.83.0",
+    "eslint": "^9.19.0"
   }
 }
