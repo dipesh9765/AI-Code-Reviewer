@@ -34,6 +34,10 @@
       {
         "command": "ai-code-reviewer.editAPIKey",
         "title": "AI Code Reviewer: Change API Key"
+      },
+      {
+        "command": "ai-code-reviewer.changeModel",
+        "title": "AI Code Reviewer: Change Model"
       }
     ]
   },
