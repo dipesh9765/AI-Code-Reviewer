@@ -70,6 +70,7 @@ Rebuild as **AI Code Reviewer**: inline, provider-agnostic AI code review for VS
 ## Verified
 
 - `npm run check`: `tsc --noEmit` (strict), ESLint (type-checked strict rules), Prettier, 137 unit tests with the coverage gate.
+- **Clean-room:** a fresh `git clone` of `overhaul/v1`, `npm ci`, `npm run check` (137 tests, 100% lines, 92.6% branches) and `npm run package` all succeed, and `npm audit --omit=dev` reports 0 vulnerabilities. This run caught an unformatted PROGRESS.md that CI would have rejected.
 - `npm run package` produces a 23 KB `.vsix`; the 7 integration tests were run **against the unpacked `.vsix`** (not the source tree) in a real VS Code 1.141 extension host, with `--disable-extensions` and throwaway profile directories: activation and commands, end-to-end review to diagnostics (range, severity, message), findings shifting on insert and being withdrawn on edit, quick-fix and dismiss, selection review in whole-file coordinates, an API key never present in the request body, edits during a review, and a 401 leaving no findings.
 
 ## Not verified / open items
