@@ -45,24 +45,36 @@ export function registerChat(
     try {
       if (request.command === "review" || request.prompt.trim() === "") {
         stream.progress("Reviewing…");
-        const result = await reviewText({
-          provider: ready.resolved.provider,
-          model: ready.resolved.model,
-          fileName,
-          languageId: doc.languageId,
-          text: doc.getText(range),
-          firstLine,
-          maxInputChars: ready.config.maxInputChars,
-          redact: ready.config.redactSecrets,
-          minSeverity: ready.config.minSeverity,
-          signal: controller.signal,
-        });
-        store.replace(
-          doc,
-          result.findings,
-          range ? { from: firstLine, to: range.end.line + 1 } : undefined,
-        );
-        stream.markdown(findingsToMarkdown(fileName, result.findings, result));
+        const text = doc.getText(range);
+        const pending = store.beginReview(doc);
+        try {
+          const result = await reviewText({
+            provider: ready.resolved.provider,
+            model: ready.resolved.model,
+            fileName,
+            languageId: doc.languageId,
+            text,
+            firstLine,
+            maxInputChars: ready.config.maxInputChars,
+            redact: ready.config.redactSecrets,
+            minSeverity: ready.config.minSeverity,
+            signal: controller.signal,
+          });
+          const shown = store.commit(
+            doc,
+            pending,
+            result.findings,
+            range ? { from: firstLine, to: firstLine + text.split("\n").length - 1 } : undefined,
+          );
+          stream.markdown(findingsToMarkdown(fileName, result.findings, result));
+          if (!shown) {
+            stream.markdown(
+              "\n\n_The selected code changed while the review ran, so the markers were not placed in the editor._",
+            );
+          }
+        } finally {
+          store.endReview(pending);
+        }
         return;
       }
 

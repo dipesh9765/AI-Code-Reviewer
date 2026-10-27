@@ -10,7 +10,9 @@ import { runTests } from "@vscode/test-electron";
  * downloading one.
  */
 async function main(): Promise<void> {
-  const root = path.resolve(__dirname, "..", "..");
+  // EXTENSION_PATH points at an unpacked .vsix (its `extension/` folder) to test the packaged
+  // artifact instead of the source tree.
+  const root = process.env.EXTENSION_PATH ?? path.resolve(__dirname, "..", "..");
   const scratch = mkdtempSync(path.join(tmpdir(), "aicr-it-"));
   const executable = process.env.VSCODE_EXECUTABLE;
   await runTests({

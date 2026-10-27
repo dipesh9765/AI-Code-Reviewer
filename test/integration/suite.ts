@@ -16,6 +16,7 @@ interface Captured {
 const captured: Captured[] = [];
 let answer = '{"findings":[]}';
 let status = 200;
+let delayMs = 0;
 
 function startMock(): Promise<Server> {
   return new Promise((resolve) => {
@@ -28,9 +29,13 @@ function startMock(): Promise<Server> {
           res.writeHead(status).end("denied");
           return;
         }
-        res.writeHead(200, { "content-type": "text/event-stream" });
-        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: answer } }] })}\n\n`);
-        res.end("data: [DONE]\n\n");
+        const reply = (): void => {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: answer } }] })}\n\n`);
+          res.end("data: [DONE]\n\n");
+        };
+        if (delayMs > 0) setTimeout(reply, delayMs);
+        else reply();
       });
     });
     server.listen(0, "127.0.0.1", () => {
@@ -188,6 +193,29 @@ test("selection review reports lines in whole-file coordinates", async () => {
   const request = captured.at(-1);
   assert.match(request?.body ?? "", /lines 4-6/);
   assert.ok(!(request?.body ?? "").includes("const v1 ="), "text outside the selection was sent");
+});
+
+test("edits made while a review runs are replayed onto its result", async () => {
+  answer = JSON.stringify({
+    findings: [{ line: 2, severity: "error", category: "bug", message: "Slow review finding" }],
+  });
+  delayMs = 700;
+  try {
+    const editor = await open("const a = 1;\nconst b = oops;\nconst c = 3;");
+    const before = captured.length;
+    const run = vscode.commands.executeCommand("aiCodeReviewer.reviewFile");
+    await waitFor("request in flight", () => (captured.length > before ? true : undefined));
+    await editor.edit((b) => {
+      b.insert(new vscode.Position(0, 0), "// added while waiting\n");
+    });
+    await run;
+    const d = await waitFor("diagnostic", () => ours(editor.document.uri)[0]);
+    // The model cited line 2 of the text it saw; that code is now on line 3 (0-based 2).
+    assert.equal(d.range.start.line, 2);
+    assert.equal(editor.document.lineAt(d.range.start.line).text, "const b = oops;");
+  } finally {
+    delayMs = 0;
+  }
 });
 
 test("clearFindings removes all diagnostics", async () => {

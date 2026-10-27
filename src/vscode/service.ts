@@ -4,7 +4,7 @@ import { summarise } from "../core/present";
 import { PROVIDER_DEFAULTS, resolveProvider, type ResolvedProvider } from "../core/providers";
 import { reviewText, type ReviewResult } from "../core/review";
 import { readConfig, type ExtensionConfig } from "./config";
-import type { FindingStore } from "./findings";
+import type { FindingStore, PendingReview } from "./findings";
 import type { KeyStore } from "./secrets";
 
 export interface ReadyProvider {
@@ -121,6 +121,8 @@ export class ReviewService {
     this.running.get(key)?.abort(); // a newer review of the same file supersedes the old one
     const controller = new AbortController();
     this.running.set(key, controller);
+    // Same tick as the snapshot above: every later edit is replayed onto the result.
+    const pending = this.store.beginReview(doc);
 
     try {
       const result = await vscode.window.withProgress(
@@ -153,22 +155,30 @@ export class ReviewService {
       if (controller.signal.aborted) return; // superseded while the last chunk was finishing
       this.show(
         doc,
+        pending,
         result,
         useSelection ? { from: firstLine, to: firstLine + text.split("\n").length - 1 } : undefined,
       );
     } catch (error) {
       this.report(error);
     } finally {
+      this.store.endReview(pending);
       if (this.running.get(key) === controller) this.running.delete(key);
     }
   }
 
   private show(
     doc: vscode.TextDocument,
+    pending: PendingReview,
     result: ReviewResult,
     scope?: { from: number; to: number },
   ): void {
-    this.store.replace(doc, result.findings, scope);
+    if (!this.store.commit(doc, pending, result.findings, scope)) {
+      void vscode.window.showInformationMessage(
+        "AI Code Reviewer: the selected code changed while the review ran, so the result was discarded. Run it again.",
+      );
+      return;
+    }
     const notes: string[] = [];
     if (result.redactions > 0)
       notes.push(`${String(result.redactions)} secret(s) redacted before sending`);
