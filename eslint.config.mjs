@@ -27,6 +27,10 @@ export default tseslint.config(
     },
   },
   {
+    files: ["test/integration/**/*.ts"],
+    rules: { "no-console": "off" },
+  },
+  {
     files: ["*.mjs", "*.config.mts"],
     ...tseslint.configs.disableTypeChecked,
   },

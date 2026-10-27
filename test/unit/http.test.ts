@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { LlmError } from "../../src/core/errors";
-import { postJson, readBody, retryDelayMs, type FetchLike } from "../../src/core/http";
+import {
+  defaultSleep,
+  postJson,
+  readBody,
+  retryDelayMs,
+  type FetchLike,
+} from "../../src/core/http";
 import { drain, noSleep } from "./helpers";
 
 const ok = (): Response => new Response("{}", { status: 200 });
@@ -208,6 +214,29 @@ describe("readBody", () => {
   it("rejects a response with no body", async () => {
     await expect(drain(readBody(new Response(null), 100))).rejects.toMatchObject({
       kind: "protocol",
+    });
+  });
+});
+
+describe("defaultSleep", () => {
+  it("resolves after the delay", async () => {
+    const start = Date.now();
+    await defaultSleep(30);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(25);
+  });
+
+  it("rejects as soon as the signal aborts", async () => {
+    const controller = new AbortController();
+    const pending = defaultSleep(10_000, controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ kind: "aborted" });
+  });
+
+  it("rejects immediately when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(defaultSleep(10_000, controller.signal)).rejects.toMatchObject({
+      kind: "aborted",
     });
   });
 });
