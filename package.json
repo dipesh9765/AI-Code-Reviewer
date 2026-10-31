@@ -1,58 +1,198 @@
 {
   "name": "ai-code-reviewer",
   "displayName": "AI Code Reviewer",
-  "description": "A VS Code extension that uses OpenAI to review your code.",
-  "version": "0.0.1",
+  "description": "Inline AI code review for VS Code. Bring your own model: OpenAI, Anthropic, Ollama or any OpenAI-compatible endpoint. Keys live in SecretStorage.",
+  "version": "1.0.0",
+  "publisher": "dipesh9765",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dipesh9765/AI-Code-Reviewer.git"
+  },
   "engines": {
-    "vscode": "^1.97.0"
+    "vscode": "^1.97.0",
+    "node": ">=20"
   },
   "categories": [
-    "Other"
+    "Linters",
+    "AI",
+    "Chat"
   ],
-  "activationEvents": [
-    "*"
+  "keywords": [
+    "code review",
+    "ai",
+    "llm",
+    "openai",
+    "anthropic",
+    "ollama"
   ],
-  "extensionDependencies": [
-    "github.copilot-chat"
-  ],
-  "main": "./extension.js",
+  "icon": "resources/icon.png",
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Reviews send file contents to the configured model endpoint. Workspace settings that change the endpoint are ignored in untrusted workspaces.",
+      "restrictedConfigurations": [
+        "aiCodeReviewer.provider",
+        "aiCodeReviewer.baseUrl"
+      ]
+    },
+    "virtualWorkspaces": true
+  },
   "contributes": {
-    "chatParticipants": [
-      {
-        "id": "ai-code-reviewer.aiCodeReviewer",
-        "fullName": "AI Code Reviewer",
-        "name": "aiCodeReviewer",
-        "description": "Generate code reviews with AI",
-        "isSticky": true
-      }
-    ],
     "commands": [
       {
-        "command": "ai-code-reviewer.editAssistantId",
-        "title": "AI Code Reviewer: Change Assistant ID"
+        "command": "aiCodeReviewer.reviewFile",
+        "title": "Review Current File",
+        "category": "AI Code Reviewer"
       },
       {
-        "command": "ai-code-reviewer.editAPIKey",
-        "title": "AI Code Reviewer: Change API Key"
+        "command": "aiCodeReviewer.reviewSelection",
+        "title": "Review Selection",
+        "category": "AI Code Reviewer"
       },
       {
-        "command": "ai-code-reviewer.changeModel",
-        "title": "AI Code Reviewer: Change Model"
+        "command": "aiCodeReviewer.clearFindings",
+        "title": "Clear Findings",
+        "category": "AI Code Reviewer"
+      },
+      {
+        "command": "aiCodeReviewer.selectProvider",
+        "title": "Select Provider and Model",
+        "category": "AI Code Reviewer"
+      },
+      {
+        "command": "aiCodeReviewer.setApiKey",
+        "title": "Set API Key",
+        "category": "AI Code Reviewer"
+      },
+      {
+        "command": "aiCodeReviewer.deleteApiKey",
+        "title": "Delete Stored API Key",
+        "category": "AI Code Reviewer"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "aiCodeReviewer.reviewSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@100"
+        },
+        {
+          "command": "aiCodeReviewer.reviewFile",
+          "when": "!editorHasSelection",
+          "group": "navigation@100"
+        }
+      ]
+    },
+    "chatParticipants": [
+      {
+        "id": "aiCodeReviewer.reviewer",
+        "name": "reviewer",
+        "fullName": "AI Code Reviewer",
+        "description": "Review the open file or selection, or ask a question about it",
+        "isSticky": false,
+        "commands": [
+          {
+            "name": "review",
+            "description": "Review the selection (or the whole file) and list findings"
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "AI Code Reviewer",
+      "properties": {
+        "aiCodeReviewer.provider": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "anthropic",
+            "ollama",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "OpenAI (api.openai.com)",
+            "Anthropic (api.anthropic.com)",
+            "Ollama running on this machine (no key, nothing leaves your computer)",
+            "Any OpenAI-compatible endpoint; set aiCodeReviewer.baseUrl"
+          ],
+          "default": "openai",
+          "scope": "machine-overridable",
+          "description": "Which model provider receives your code."
+        },
+        "aiCodeReviewer.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model name. Leave empty for the provider's default (OpenAI gpt-4o-mini, Anthropic claude-haiku-5-5, Ollama qwen2.5-coder)."
+        },
+        "aiCodeReviewer.baseUrl": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "description": "Override the API base URL (required for the 'custom' provider). Plain http:// is only accepted for localhost."
+        },
+        "aiCodeReviewer.minSeverity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ],
+          "default": "info",
+          "description": "Hide findings below this severity."
+        },
+        "aiCodeReviewer.redactSecrets": {
+          "type": "boolean",
+          "default": true,
+          "description": "Replace API keys, tokens and private keys with placeholders before the code leaves your machine."
+        },
+        "aiCodeReviewer.maxInputChars": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 2000,
+          "maximum": 400000,
+          "description": "Upper bound on the characters sent per review. Longer files are split into chunks; anything beyond the chunk limit is skipped and reported."
+        },
+        "aiCodeReviewer.requestTimeoutSeconds": {
+          "type": "number",
+          "default": 90,
+          "minimum": 5,
+          "maximum": 600,
+          "description": "Give up on a model request after this many seconds."
+        }
+      }
+    }
   },
   "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "pretest": "npm run lint",
-    "test": "vscode-test"
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:integration": "node esbuild.mjs && node esbuild.mjs --integration && node out/integration/run.js",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "package": "npm run build -- --production && vsce package --no-dependencies",
+    "vscode:prepublish": "npm run build -- --production"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "20.x",
-    "@types/vscode": "^1.97.0",
-    "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1",
-    "@vscode/openai": "^4.83.0",
-    "eslint": "^9.19.0"
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "@types/vscode": "1.97.0",
+    "@vitest/coverage-v8": "5.0.5",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.2",
+    "eslint": "10.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5"
   }
 }
